@@ -86,7 +86,7 @@ npx prisma migrate dev
 
 Ini akan membuat skema database berdasarkan model Prisma yang telah didefinisikan.
 
-5. Jalankan seeding data menggunakan file `prisma/seed.js` dan seeding tambahan users yang berada di seed-users.js yang telah kita modifikasi:
+5. Jalankan seeding data menggunakan file `prisma/seed.js` dan seeding tambahan users yang berada di file `seed-users.js` yang telah kita modifikasi:
 
 ```plaintext
 npx prisma db seed
