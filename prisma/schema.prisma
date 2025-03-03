@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  description String?
+  isParent    Boolean
+  employees   Employee[]
+  jobs        Job[]
+}
+
+model Employee {
+  id                    Int                    @id @default(autoincrement())
+  name                  String
+  email                 String                 @unique
+  position              String
+  department            String
+  companyId             Int
+  level                 String
+  rumpunJabatan         String
+  talentMobility        String?
+  birthDate             DateTime?              @db.Timestamp(6)
+  applications          Application[]
+  certifications        Certification[]
+  completedApplications CompletedApplication[]
+  company               Company                @relation(fields: [companyId], references: [id])
+  organizationHistories OrganizationHistory[]
+  pendidikanKaryawan    PendidikanKaryawan[]
+  workExperiences       WorkExperience[]
+}
+
+model PendidikanKaryawan {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int
+  namaInstitut String
+  jenjang      String
+  jurusan      String
+  tahunMasuk   Int
+  tahunAkhir   Int
+  employee     Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, namaInstitut, jenjang, jurusan])
+}
+
+model WorkExperience {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  company     String
+  position    String
+  startDate   DateTime
+  endDate     DateTime?
+  description String?
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+}
+
+model Certification {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  name        String
+  issuer      String
+  issueDate   DateTime
+  expiryDate  DateTime?
+  description String?
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+}
+
+model OrganizationHistory {
+  id           Int       @id @default(autoincrement())
+  employeeId   Int
+  organization String
+  position     String
+  startDate    DateTime
+  endDate      DateTime?
+  description  String?
+  employee     Employee  @relation(fields: [employeeId], references: [id])
+}
+
+model Job {
+  id                    Int                    @id @default(autoincrement())
+  title                 String
+  department            String
+  location              String
+  description           String
+  companyId             Int
+  postingDate           DateTime
+  expirationDate        DateTime
+  jobType               String
+  jobQualification      String
+  levelJabatan          String
+  rumpunJabatan         String
+  durationMonths        Int
+  lokasiPenempatan      String
+  applications          Application[]
+  completedApplications CompletedApplication[]
+  company               Company                @relation(fields: [companyId], references: [id])
+}
+
+model Application {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  jobId      Int
+  status     String
+  appliedAt  DateTime
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  job        Job      @relation(fields: [jobId], references: [id])
+
+  @@unique([employeeId, jobId])
+}
+
+model CompletedApplication {
+  id          Int      @id @default(autoincrement())
+  employeeId  Int
+  jobId       Int
+  status      String
+  appliedAt   DateTime
+  completedAt DateTime @default(now())
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  job         Job      @relation(fields: [jobId], references: [id])
+
+  @@unique([employeeId, jobId])
+}
+
+model User {
+  id        Int    @id @default(autoincrement())
+  name      String
+  email     String @unique
+  password  String
+  role      String
+  companyId Int
+}
