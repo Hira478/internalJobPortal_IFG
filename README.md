@@ -128,6 +128,3 @@ Setelah mengikuti langkah-langkah di atas, aplikasi Website Rekrutmen IFG seharu
 
 - Email: [admin@bpui.co.id](mailto:admin@bpui.co.id)
 - Password: admin123
-
-# internalJobPortal_IFG
-# internalJobPortal_IFG
