@@ -1,177 +1,257 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useAuth } from "@/contexts/AuthContext"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { getUsers, updateUserPassword, registerUser } from "@/lib/db"
-import { toast } from "@/components/ui/use-toast"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { getAllUsers, updateUserPassword } from "@/app/actions/userActions";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/use-toast";
+import { ResetPasswordModal } from "./reset-password-modal";
+import { useAuth } from "@/contexts/AuthContext";
+import { PasswordField } from "./password-field";
+import type { User } from "@/types";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, RefreshCw } from "lucide-react";
+
+// Tambahkan interface untuk menyimpan password plaintext
+interface UserWithPlaintextPassword extends User {
+  plaintextPassword?: string;
+}
 
 export default function ManageLoginsPage() {
-  const { user } = useAuth()
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [isAddUserDialogOpen, setIsAddUserDialogOpen] = useState(false)
-  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "hrd" })
+  const [users, setUsers] = useState<UserWithPlaintextPassword[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedUser, setSelectedUser] =
+    useState<UserWithPlaintextPassword | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const fetchedUsers = await getUsers()
-        console.log("Fetched users:", fetchedUsers) // Logging untuk debug
-        setUsers(fetchedUsers)
-      } catch (err) {
-        console.error("Error fetching users:", err)
-        setError("Failed to fetch users")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchUsers()
-  }, [])
-
-  const handleResetPassword = async (userId: number) => {
-    try {
-      const newPassword = Math.random().toString(36).slice(-8) // Generate a random 8-character password
-      await updateUserPassword(userId, newPassword)
+    if (!currentUser || currentUser.role !== "superadmin") {
       toast({
-        title: "Password Reset Successful",
-        description: `New password: ${newPassword}`,
-      })
-    } catch (err) {
-      console.error("Error resetting password:", err)
-      toast({
-        title: "Password Reset Failed",
-        description: "An error occurred while resetting the password.",
+        title: "Akses Ditolak",
+        description: "Anda tidak memiliki izin untuk mengakses halaman ini.",
         variant: "destructive",
-      })
+      });
+      router.push("/dashboard");
+      return;
     }
-  }
 
-  const handleAddUser = async () => {
+    fetchUsers();
+  }, [currentUser, router, toast]);
+
+  const fetchUsers = async () => {
     try {
-      await registerUser(newUser)
+      setIsLoading(true);
+      setError(null);
+      const data = await getAllUsers();
+
+      // Cek apakah ada password plaintext yang disimpan di localStorage
+      const usersWithSavedPasswords = data.map((user) => {
+        const savedPassword = localStorage.getItem(`user_${user.id}_password`);
+        return {
+          ...user,
+          plaintextPassword: savedPassword || undefined,
+        };
+      });
+
+      setUsers(usersWithSavedPasswords);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      setError(error.message || "Gagal memuat data pengguna.");
       toast({
-        title: "User Added Successfully",
-        description: "The new user has been added to the system.",
-      })
-      setIsAddUserDialogOpen(false)
-      // Refresh user list
-      const updatedUsers = await getUsers()
-      setUsers(updatedUsers)
-    } catch (err) {
-      console.error("Error adding new user:", err)
-      toast({
-        title: "Failed to Add User",
-        description: "An error occurred while adding the new user.",
+        title: "Error",
+        description: error.message || "Gagal memuat data pengguna.",
         variant: "destructive",
-      })
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
 
-  if (!user || user.role !== "superadmin") {
-    return <div className="container mx-auto p-6">Access Denied. Only superadmin can view this page.</div>
-  }
+  const handleResetPassword = (user: UserWithPlaintextPassword) => {
+    setSelectedUser(user);
+    setIsModalOpen(true);
+  };
 
-  if (loading) {
-    return <div className="container mx-auto p-6">Loading...</div>
-  }
+  const handlePasswordReset = async (userId: number, newPassword: string) => {
+    try {
+      const result = await updateUserPassword(userId, newPassword);
 
-  if (error) {
-    return <div className="container mx-auto p-6">Error: {error}</div>
+      // Simpan password plaintext di localStorage
+      localStorage.setItem(`user_${userId}_password`, newPassword);
+
+      // Update the user's password in the local state
+      setUsers(
+        users.map((user) =>
+          user.id === userId
+            ? { ...user, password: "Updated", plaintextPassword: newPassword }
+            : user
+        )
+      );
+
+      toast({
+        title: "Sukses",
+        description: "Password berhasil diubah.",
+      });
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Gagal mengubah password.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const filteredUsers = users.filter(
+    (user) =>
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (isLoading) {
+    return <div className="p-8">Memuat data pengguna...</div>;
   }
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="p-8">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Manage Company Logins</CardTitle>
-          <Button onClick={() => setIsAddUserDialogOpen(true)}>Add New User</Button>
+        <CardHeader>
+          <CardTitle className="flex justify-between items-center">
+            <span>Manajemen Login Pengguna</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchUsers}
+              disabled={isLoading}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
-            <p>No user data found.</p>
+          {error ? (
+            <div className="mb-4">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+              <div className="mt-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Kemungkinan penyebab:
+                </p>
+                <ul className="list-disc pl-5 text-sm text-gray-600">
+                  <li>Koneksi database terputus</li>
+                  <li>
+                    Tabel User belum dibuat atau tidak sesuai dengan skema
+                  </li>
+                  <li>Izin akses database tidak cukup</li>
+                </ul>
+                <p className="text-sm text-gray-600 mt-2">
+                  Pastikan database sudah diatur dengan benar dan tabel User
+                  sudah dibuat.
+                </p>
+              </div>
+            </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Company Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>{user.name}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.role}</TableCell>
-                    <TableCell>
-                      <Button onClick={() => handleResetPassword(user.id)}>Reset Password</Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <>
+              <div className="mb-4">
+                <Input
+                  placeholder="Cari berdasarkan nama atau email..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-md"
+                />
+              </div>
+              <div className="mb-4">
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Informasi Password</AlertTitle>
+                  <AlertDescription>
+                    Password yang sudah ada sebelumnya tidak dapat ditampilkan
+                    karena disimpan dalam bentuk terenkripsi. Hanya password
+                    yang baru di-reset yang dapat ditampilkan.
+                  </AlertDescription>
+                </Alert>
+              </div>
+              {users.length === 0 ? (
+                <p>Tidak ada data pengguna yang ditemukan.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nama</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Password</TableHead>
+                      <TableHead>Peran</TableHead>
+                      <TableHead>Perusahaan</TableHead>
+                      <TableHead>Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredUsers.map((user) => (
+                      <TableRow key={user.id}>
+                        <TableCell>{user.name}</TableCell>
+                        <TableCell>{user.email}</TableCell>
+                        <TableCell>
+                          {user.plaintextPassword ? (
+                            <PasswordField
+                              password={user.plaintextPassword}
+                              isPlaintext={true}
+                            />
+                          ) : (
+                            <PasswordField
+                              password={user.password || ""}
+                              isPlaintext={false}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {user.role === "superadmin" ? "Super Admin" : "HRD"}
+                        </TableCell>
+                        <TableCell>{user.company?.name || `-`}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleResetPassword(user)}
+                          >
+                            Reset Password
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
 
-      <Dialog open={isAddUserDialogOpen} onOpenChange={setIsAddUserDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New User</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">
-                Company Name
-              </Label>
-              <Input
-                id="name"
-                value={newUser.name}
-                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="email" className="text-right">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={newUser.email}
-                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="password" className="text-right">
-                Password
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                value={newUser.password}
-                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                className="col-span-3"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={handleAddUser}>Add User</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ResetPasswordModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handlePasswordReset}
+        user={selectedUser}
+      />
     </div>
-  )
+  );
 }
-
